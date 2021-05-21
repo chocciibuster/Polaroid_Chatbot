@@ -9,6 +9,8 @@ import sys
 import json
 import types
 
+#new Project!
+richieFacts = ["Richie hat Sushisocken mit einem gigantischen Loch, kauf dir bitte neue, Richie!"]
 
 class Command(object):
     def __init__(self, command, cooldown = 10, messageHandler = None, prefix = "!", response = ""):
@@ -57,7 +59,7 @@ ScriptSettings = MySettings()
 #Konstante#
 MAX_POOL_MEMBERS = 5
 MAX_POOLS = 5
-POOLFILE = "schnib.pkl"
+POOLFILE = "Services\Scripts\Polaroid_Chatbot\schnib.pkl"
 
 def sendMessage (msg):
     Parent.SendStreamMessage(msg)
@@ -102,6 +104,9 @@ def usersInAnyPool (memberList, pools):
                     return True
     return False
 
+def userInAnyPool (user, pools):
+    return usersInAnyPools([user], pools)
+
 def findPoolByUsername (username, file):
     pools = readPoolsFromFile(file)
 
@@ -118,8 +123,6 @@ def overwritePoolfileWithList (list, file):
 
 def deletePoolByUsername (username, file):
 
-    sendUsrMessage("jambuzzed", "knobi")
-
     pools = readPoolsFromFile(file)
 
     def filt (pool):
@@ -130,9 +133,35 @@ def deletePoolByUsername (username, file):
 
     writeList = filter(filt, pools)
 
-    sendUsrMessage("jambuzzed", "knobi2")
-
     overwritePoolfileWithList(writeList, file)
+
+#-------------------------------------------------------------------------------
+# should be in Pool class but fuq you!
+#-------------------------------------------------------------------------------
+
+def getPoolMemberStr(pool):
+    str = ""
+
+    if len(pool.members) == 1:
+        str = pool.members[0].username
+
+    else:
+        for member in pool.members:
+
+            if member == pool.members[len(pool.members) - 1]:
+                str += " und " + member.username
+            elif member == pool.members[len(pool.members) - 2]:
+                str += " " + member.username
+            else:
+                str += " " + member.username + ","
+
+    return str
+
+
+def oneOrMany(pool, option_one, option_many):
+    if (len(pool.members) > 1):
+        return option_many
+    return option_one
 
 #-------------------------------------------------------------------------------
 
@@ -165,12 +194,77 @@ def polCreationHandler (self, data):
 
     sendUsrMessage(owner, "Euer pool wurde erfolgreich angelegt! <3")
 
+
 #-------------------------------------------------------------------------------
 def polSubmitHandler (self, data):
-    pass
+    user = data.UserName
+    argc  = data.GetParamCount()
+
+    if argc != 2:
+        sendUsrMessage(user, "Um in den Pool einzuzahlen, tippe !submit <Anzahl>")
+        return
+
+    amount = data.GetParam(1)
+
+    try:
+        amount = abs(int(amount))
+    except:
+        sendUsrMessage(user, "Die Anzahl an Eierschalen ist ungültig.")
+        return
+
+
+    pool = findPoolByUsername(user, POOLFILE)
+
+    if pool == None:
+        sendUsrMessage(user, "Du bist in keinem Pool, snutti! Erstelle einen neuen mit !polaroid oder warte, bis ein neuer Platz frei wird.")
+        return
+
+    if pool.status == 1:
+        sendUsrMessage(user, "Das Polaroid wurde bereits abgezahlt! Good job! <3")
+        return
+
+    userBalance = Parent.GetPoints(user)
+    if amount > userBalance:
+        sendUsrMessage(user, "So viele Eierschalen hast du nicht.")
+        return
+
+    if amount > (pool.goal - pool.balance):
+        amount = pool.goal - pool.balance
+
+    try:
+        Parent.RemovePoints(data.User,data.UserName,amount)
+    except:
+        sendUsrMessage(user, "Irgendwas ist schiefgelaufen :( gib bitte jambuzzed Bescheid (oder einem Mod)")
+
+    pool.balance += amount
+
+    if pool.balance == pool.goal:
+        pool.status = 1
+        sendUsrMessage(user, "Dein" if len(pool.members) == 1 else "Euer" + " Polaroid ist damit abgezahlt!! :jambuzHype:")
+
+    deletePoolByUsername(user, POOLFILE)
+
+    appendPoolToFile(pool, POOLFILE)
+
+    sendUsrMessage(user, " hat " + str(amount) + " Eierschalen eingezahlt!")
+
 #-------------------------------------------------------------------------------
 def polStatusHandler (self, data):
-    pass
+    user = data.UserName
+
+    pool = findPoolByUsername(user, POOLFILE)
+
+    if pool == None:
+        sendUsrMessage(user, "Du bist in keinem Pool, snutti! Erstelle einen neuen mit !polaroid oder warte, bis ein neuer Platz frei wird.")
+        return
+
+    sendUsrMessage(user, "Bisher wurden " + str(pool.balance) + " Eierschalen eingezahlt. "\
+                    + "Es fehlen noch " + str(pool.goal - pool.balance) + " Eierschalen. "\
+                    + "Zum Pool " + oneOrMany(pool, "gehört ", "gehören ") + getPoolMemberStr(pool) + ".")
+
+
+
+#-------------------------------------------------------------------------------
 
 def polDeleteHandler (self, data):
     argc = data.GetParamCount()
@@ -181,23 +275,21 @@ def polDeleteHandler (self, data):
     if argc != 2:
         return
 
-    usr  = data.GetParam(1)
-    #pool = findPoolByUsername(usr, POOLFILE)
-    sendUsrMessage("jambuzzed", "usri: " + usr)
-    allPools = readPoolsFromFile(POOLFILE)
+    usr  = formatMember(data.GetParam(1))
 
+    allPools = readPoolsFromFile(POOLFILE)
 
     deletePoolByUsername(usr, POOLFILE)
 
-    sendUsrMessage("jambuzzed", "ye pool was delet")
+    sendUsrMessage("jambuzzed", "Pool wurde erfolgreich deleted!")
 
 global polCreationCommand
 global polSubmitCommand
 global polStatusCommand
-polCreationCommand  = Command("!polaroid", messageHandler=polCreationHandler)
-polSubmitCommand    = Command("!submit")                             # eventuell neues Command, wenn wir nen cooleren Namen finden :D
-polStatusCommand    = Command("!pstatus")
-polDeleteCommand    = Command("!deletepool", messageHandler=polDeleteHandler)
+polCreationCommand  = Command("!polaroid",  messageHandler=polCreationHandler)
+polSubmitCommand    = Command("!polsubmit", messageHandler=polSubmitHandler)
+polStatusCommand    = Command("!polstatus", messageHandler=polStatusHandler)
+polDeleteCommand    = Command("!poldelete", messageHandler=polDeleteHandler)
 
 #---------------------------
 #   [Required] Initialize Data (Only called on load)
@@ -251,38 +343,6 @@ def Execute(data):
                            command.command,\
                            data.User,\
                            ScriptSettings.Cooldown)
-
-
-
-    '''
-    if command == polCreationCommand.command:
-        if polCreationCommand.IsOnUserCooldown(ScriptName, data.User):
-            Parent.SendStreamMessage("Time Remaining " + str(Parent.GetUserCooldownDuration(ScriptName, command, data.User)))
-            return
-
-        Parent.AddUserCooldown(ScriptName, command, data.User, ScriptSettings.Cooldown)  # Put the command on cooldown
-
-
-    elif command == polSubmitCommand.command:
-        return
-
-    elif command == polStatusCommand.command:
-        return
-    '''
-
-    '''
-    if data.IsChatMessage():
-        if data.GetParam(0).lower() == polCreationCommand.command || data.GetParam(0).lower() == polSubmitCommand.command || data.GetParam(0).lower() == polStatusCommand.command:
-            if Parent.IsOnUserCooldown(ScriptName,data.GetParam(0),data.User):
-                Parent.SendStreamMessage("Time Remaining " + str(Parent.GetUserCooldownDuration(ScriptName,"!bork",data.User)))
-
-    #   Check if the propper command is used, the command is not on cooldown and the user has permission to use the command
-    if data.GetParam(0).lower() == "!bork" and not Parent.IsOnUserCooldown(ScriptName,"!bork",data.User) and Parent.HasPermission(data.User,ScriptSettings.Permission,ScriptSettings.Info):
-        Parent.BroadcastWsEvent("EVENT_MINE","{'show':false}")
-        Parent.SendStreamMessage(ScriptSettings.Response)    # Send your message to chat
-        Parent.AddUserCooldown(ScriptName,"!bork",data.User,ScriptSettings.Cooldown)  # Put the command on cooldown
-    '''
-    #Parent.Log(ScriptName, "0): " + data.GetParam(0) + "1) " + data.GetParam(1))
 
     return
 
